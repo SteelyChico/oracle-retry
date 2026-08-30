@@ -1,18 +1,16 @@
 import oci
-import time
 import datetime
+import sys
 
 # ── Configuração ──────────────────────────────────────────────────────────────
 USER_OCID      = "ocid1.user.oc1..aaaaaaaarasfgjf5pequazljjettdk6ymxykj4k5y5w6ynbsof6jz5b75fxa"
 TENANCY_OCID   = "ocid1.tenancy.oc1..aaaaaaaa7ftaiwgunhkqag2s2y7tw3x22s7ltscuvh6udltggaj535s6roda"
 FINGERPRINT    = "3a:65:f1:43:67:68:63:1f:eb:3e:c1:df:75:c8:fa:a7"
 REGION         = "sa-saopaulo-1"
-KEY_FILE       = "private_key.pem"   # coloca a chave .pem neste mesmo diretório
+KEY_FILE       = "private_key.pem"
 
 SUBNET_OCID    = "ocid1.subnet.oc1.sa-saopaulo-1.aaaaaaaacj2q4m2y2jxags57ootbuho3unmcjdrlizhywz3ynfeaavtwdo6a"
-SSH_PUBLIC_KEY = open("ssh_key.pub").read().strip()   # coloca o .pub aqui também
-
-INTERVAL_SECONDS = 300   # tenta a cada 5 minutos
+SSH_PUBLIC_KEY = open("ssh_key.pub").read().strip()
 # ──────────────────────────────────────────────────────────────────────────────
 
 config = {
@@ -28,7 +26,6 @@ def log(msg):
     print(f"[{ts}] {msg}", flush=True)
 
 def get_image_id(compute):
-    """Pega o OCID da imagem Ubuntu 22.04 ARM64 em sa-saopaulo-1."""
     images = compute.list_images(
         compartment_id=TENANCY_OCID,
         operating_system="Canonical Ubuntu",
@@ -65,31 +62,23 @@ def try_create(compute, image_id):
 
 def main():
     compute = oci.core.ComputeClient(config)
-    log("Buscando OCID da imagem Ubuntu 22.04 ARM...")
+    log("Buscando imagem Ubuntu 22.04 ARM...")
     image_id = get_image_id(compute)
-    log(f"Imagem encontrada: {image_id}")
-
-    attempt = 0
-    while True:
-        attempt += 1
-        log(f"Tentativa #{attempt} — criando VM...")
-        try:
-            instance = try_create(compute, image_id)
-            log(f"✅ VM CRIADA COM SUCESSO!")
-            log(f"   OCID:   {instance.id}")
-            log(f"   Status: {instance.lifecycle_state}")
-            log("Aguarde alguns minutos para a VM inicializar e obter IP público.")
-            break
-        except oci.exceptions.ServiceError as e:
-            if e.status == 500 and "Out of host capacity" in str(e.message):
-                log(f"❌ Sem capacidade disponível. Próxima tentativa em {INTERVAL_SECONDS//60} minutos...")
-            elif e.status == 429:
-                log("⚠️  Rate limit atingido. Aguardando 10 minutos...")
-                time.sleep(600)
-                continue
-            else:
-                log(f"⚠️  Erro inesperado: {e.status} — {e.message}")
-        time.sleep(INTERVAL_SECONDS)
+    log(f"Imagem: {image_id}")
+    log("Tentando criar VM...")
+    try:
+        instance = try_create(compute, image_id)
+        log(f"✅ VM CRIADA COM SUCESSO!")
+        log(f"   OCID:   {instance.id}")
+        log(f"   Status: {instance.lifecycle_state}")
+        sys.exit(0)
+    except oci.exceptions.ServiceError as e:
+        if e.status == 500 and "Out of host capacity" in str(e.message):
+            log("❌ Sem capacidade. Próxima tentativa no próximo agendamento.")
+            sys.exit(1)
+        else:
+            log(f"⚠️  Erro: {e.status} — {e.message}")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
