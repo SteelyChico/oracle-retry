@@ -1,0 +1,28 @@
+name: Oracle ARM Retry
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # a cada 5 minutos
+  workflow_dispatch:         # permite rodar manualmente
+
+jobs:
+  retry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependências
+        run: pip install oci
+
+      - name: Criar arquivo de chave privada
+        run: |
+          echo "${{ secrets.OCI_PRIVATE_KEY }}" > private_key.pem
+          chmod 600 private_key.pem
+
+      - name: Criar arquivo de chave pública SSH
+        run: echo "${{ secrets.SSH_PUBLIC_KEY }}" > ssh_key.pub
+
+      - name: Tentar criar VM
+        run: python oracle_retry.py
